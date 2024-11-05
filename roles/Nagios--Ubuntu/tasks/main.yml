@@ -1,18 +1,19 @@
-  - name: nagios libraries and dependencies (Ubuntu)
+---
+
+  - name: Install required dependencies on Ubuntu
     apt:
       name:
-        - autoconf
-        - libc6
         - gcc
+        - libc6
         - make
         - wget
         - unzip
         - apache2
         - php
-        - libapache2-mod-php
         - libgd-dev
         - openssl
         - libssl-dev
+        - autoconf
         - bc
         - gawk
         - dc
@@ -20,78 +21,138 @@
         - snmp
         - libnet-snmp-perl
         - gettext
-        - python3
-        - python3-pip
       state: present
+    when: ansible_distribution == "Ubuntu"
+  
+  - name: Install required dependencies on CentOS
+    yum:
+      name:
+        - gcc
+        - glibc
+        - glibc-common
+        - wget
+        - unzip
+        - httpd
+        - php
+        - gd
+        - gd-devel
+        - perl
+        - postfix
+        - openssl
+        - openssl-devel
+        - make
+        - autoconf
+      state: present
+    when: ansible_distribution == "CentOS"
 
-  - name: passlib package (Ubuntu)
-    pip:
-      name: passlib
+  - name: Download Nagios Core source code
+    get_url:
+      url: "https://assets.nagios.com/downloads/nagioscore/releases/nagios-4.5.6.tar.gz"
+      dest: /tmp/nagios-4.5.6.tar.gz
 
-  - name: Creating a directory for nagios (Ubuntu)
-    file:
-      path: ~/nagios
-      state: directory
-
-  - name: Downloading and extracting Nagios (Ubuntu)
+  - name: Extract Nagios source code
     unarchive:
-      src: https://github.com/NagiosEnterprises/nagioscore/archive/nagios-4.4.6.tar.gz
-      dest: ~/nagios
+      src: /tmp/nagios-4.5.6.tar.gz
+      dest: /tmp
       remote_src: yes
-      mode: 0777
-      owner: root
-      group: root
 
-  - name: Downloading and extracting Nagios plugins (Ubuntu)
+  - name: Download Nagios Plugins
+    get_url:
+      url: "https://nagios-plugins.org/download/nagios-plugins-2.4.11.tar.gz"
+      dest: /tmp/nagios-plugins-2.4.11.tar.gz
+
+  - name: Extract Nagios Plugins
     unarchive:
-      src: https://github.com/nagios-plugins/nagios-plugins/archive/release-2.3.3.tar.gz
-      dest: ~/nagios
+      src: /tmp/nagios-plugins-2.4.11.tar.gz
+      dest: /tmp
       remote_src: yes
-      mode: 0777
-      owner: root
-      group: root
-    when: not (ansible_facts['file_exists']|default({}))['~/nagios/nagios-plugins-2.3.3']|default(False)
+      
+  - name: Create Nagios group
+    group:
+      name: nagios
+      
+  - name: Create Nagios user and group
+    user:
+      name: nagios
+      group: nagios
 
-  - name: install, compile, adding users and groups in Nagios (Ubuntu)
-    shell: |
-      cd ~/nagios/nagioscore-*
-      sudo ./configure --with-httpd-conf=/etc/apache2/sites-enabled
-      sudo make all
-      sudo make install-groups-users
-      sudo usermod -a -G nagios www-data
-      sudo make install
-      sudo make install-daemoninit
-      sudo make install-commandmode
-      sudo make install-config
-      sudo make install-webconf
-      sudo a2enmod rewrite
-      sudo a2enmod cgi
-    when: not (ansible_facts['file_exists']|default({}))['~/nagios/nagioscore-*']|default(False)
+  - name: Create nagcmd group
+    group:
+      name: nagcmd
 
-  - name: compile and install plugins (Ubuntu)
+  - name: Add nagios and apache/httpd users to nagcmd group
+    user:
+      name: "{{ item }}"
+      groups: nagcmd
+      append: yes
+    loop:
+      - nagios
+      - "{{ 'www-data' if ansible_os_family == 'Debian' else 'apache' }}"
+
+  - name: Compile and install Nagios Core
     shell: |
-      cd ~/nagios/nagios-plugins*
-      ./tools/setup
-      ./configure
+      cd /tmp/nagios-4.5.6
+      ./configure --with-command-group=nagcmd
+      make all
+      make install
+      make install-init
+      make install-commandmode
+      make install-config
+      make install-webconf
+    args:
+      creates: /usr/local/nagios/bin/nagios
+
+  - name: Install Nagios Plugins
+    shell: |
+      cd /tmp/nagios-plugins-2.4.11
+      ./configure --with-nagios-user=nagios --with-nagios-group=nagios
       make
       make install
-    when: not (ansible_facts['file_exists']|default({}))['~/nagios/nagios-plugins-2.3.3']|default(False)
+    args:
+      creates: /usr/local/nagios/libexec/check_http
 
-  - name: Add a user and permissions  (Ubuntu)
-    community.general.htpasswd:
-      path: /usr/local/nagios/etc/htpasswd.users
-      name: chrysler
-      password: chrysler
-    when: not (ansible_facts['file_exists']|default({}))['/usr/local/nagios/etc/htpasswd.users']|default(False)
+  - name: Set Nagios admin password
+    command: htpasswd -b -c /usr/local/nagios/etc/htpasswd.users nagios_admin "changeme"
 
-  - name: starting/enabling nagios (Ubuntu)
-    service:
-      name: nagios
-      state: started
-      enabled: true
-
-  - name: starting/enabling apache2 (Ubuntu)
+  - name: Enable and start Apache/Httpd service on Ubuntu
     service:
       name: apache2
+      enabled: yes
       state: started
-      enabled: true
+    when: ansible_distribution == "Ubuntu"
+
+  - name: Enable and start Apache/Httpd service on CentOS
+    service:
+      name: httpd
+      enabled: yes
+      state: started
+    when: ansible_distribution == "CentOS"
+
+  - name: Enable and start Nagios service
+    service:
+      name: nagios
+      enabled: yes
+      state: started
+
+  - name: Enable external command execution in Nagios
+    lineinfile:
+      path: /usr/local/nagios/etc/nagios.cfg
+      regexp: '^#?check_external_commands='
+      line: 'check_external_commands=1'
+
+  - name: Restart Nagios service to apply changes
+    service:
+      name: nagios
+      state: restarted
+
+  - name: Restart Apache/Httpd to apply changes on Ubuntu
+    service:
+      name: apache2
+      state: restarted
+    when: ansible_distribution == "Ubuntu"
+
+  - name: Restart Apache/Httpd to apply changes on CentOS
+    service:
+      name: httpd
+      state: restarted
+    when: ansible_distribution == "CentOS"
