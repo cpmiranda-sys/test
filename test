@@ -11,6 +11,18 @@
           - ca-certificates
           - curl
           - software-properties-common
+          - python3-pip
+          - python3
+        state: present
+
+    - name: Install Docker Python library
+      pip:
+        name: docker
+        state: present
+
+    - name: Install Docker Python libraries
+      apt:
+        name: python3-docker
         state: present
 
     - name: Add Docker’s official GPG key
