@@ -12,27 +12,10 @@
 #    changed_when: false
 #    when: ansible_distribution == "CentOS"
 
-#  - name: Ensure dpkg is configured (Ubuntu)
-#    raw: sudo dpkg --configure -a
-#    ignore_errors: yes
-#    changed_when: false
-#    when: ansible_distribution == "Ubuntu"
-
-#  - name: install update and repositories (Ubuntu)
-#    tags: always
-#    apt:
-#      upgrade: yes
-#      update_cache: yes
-#    changed_when: false
-#    when: ansible_distribution == "Ubuntu"
-
 - hosts: all
   become: true
   roles:
-    - ElasticStack
-    - HTTPD_PHP_MariaDB
-    - InfluxDB_Grafana_Prometheus--CentOS
-    - Nagios--Ubuntu
-    - InfluxDB_Grafana_Prometheus--Ubuntu
+      - Prometheus
+      - apache2
 
 
