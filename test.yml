@@ -37,3 +37,58 @@
       ansible.builtin.lineinfile:
         path: /etc/motd
         line: "Ansible Managed by {{ ansible_user }}"
+
+---
+- hosts: webservers
+  become: yes
+  tasks:
+    - name: Ensure Docker is installed
+      ansible.builtin.package:
+        name: docker
+        state: present
+
+    - name: Build Nginx Docker image
+      ansible.builtin.command:
+        cmd: docker build -t custom_nginx ./docker/nginx
+      args:
+        chdir: ./docker/nginx  # Change to the Nginx Dockerfile directory
+
+    - name: Run Nginx container
+      ansible.builtin.docker_container:
+        name: nginx
+        image: custom_nginx
+        state: started
+        ports:
+          - "80:80"
+
+    - name: Change MOTD
+      ansible.builtin.lineinfile:
+        path: /etc/motd
+        line: "Ansible Managed by {{ ansible_user }}"
+
+- hosts: monitoring
+  become: yes
+  tasks:
+    - name: Ensure Docker is installed
+      ansible.builtin.package:
+        name: docker
+        state: present
+
+    - name: Build Prometheus Docker image
+      ansible.builtin.command:
+        cmd: docker build -t custom_prometheus ./docker/prometheus
+      args:
+        chdir: ./docker/prometheus  # Change to the Prometheus Dockerfile directory
+
+    - name: Run Prometheus container
+      ansible.builtin.docker_container:
+        name: prometheus
+        image: custom_prometheus
+        state: started
+        ports:
+          - "9090:9090"
+
+    - name: Change MOTD
+      ansible.builtin.lineinfile:
+        path: /etc/motd
+        line: "Ansible Managed by {{ ansible_user }}"
